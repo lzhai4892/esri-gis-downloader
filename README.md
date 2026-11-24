@@ -23,8 +23,9 @@ A web application for downloading one feature layer from an ArcGIS REST service.
 
 ## Example URLs
 
-Here are some example ArcGIS REST service endpoints you can use:
+Here are public CORS-enabled ArcGIS REST endpoints you can test with:
 
-- https://sampleserver6.arcgisonline.com/arcgis/rest/services/SampleWorldCities/MapServer
-- https://sampleserver6.arcgisonline.com/arcgis/rest/services/SampleWorldCities/MapServer/0
-- https://gis.fdot.gov/arcgis/rest/services/WorkProgram_Tbl15_Dissolved/MapServer/0
+- https://sampleserver6.arcgisonline.com/arcgis/rest/services/SampleWorldCities/MapServer (service with multiple layers)
+- https://sampleserver6.arcgisonline.com/arcgis/rest/services/SampleWorldCities/MapServer/0 (paginated point layer, 2,232 features)
+- https://sampleserver6.arcgisonline.com/arcgis/rest/services/WorldTimeZones/MapServer/0 (non-paginated layer using object IDs, 2,539 features)
+- https://sampleserver6.arcgisonline.com/arcgis/rest/services/USA/MapServer/3 (US counties polygons, 3,141 features)

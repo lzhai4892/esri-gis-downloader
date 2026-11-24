@@ -1,4 +1,5 @@
 :root {
+    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     --primary-color: #feae5c;
     --primary-hover: #f09a3c;
     --primary-ink: #1a1a1a;
@@ -21,8 +22,10 @@
 }
 
 body {
-    font-family: Aptos, "Segoe UI Variable Text", "Segoe UI", sans-serif;
+    font-family: var(--font-sans);
     font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     background-color: var(--background-color);
     color: var(--text-color);
     line-height: 1.5;
@@ -50,11 +53,11 @@ body {
 }
 
 h1 {
-    font-family: Aptos, "Segoe UI Variable Display", "Segoe UI", sans-serif;
-    font-size: 1.5rem;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
+    font-family: inherit;
+    font-size: 1.45rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.25;
     color: var(--text-color);
 }
 
@@ -86,9 +89,9 @@ h1 {
 label {
     display: block;
     margin-bottom: 6px;
-    font-size: 0.82rem;
+    font-size: 0.85rem;
     font-weight: 600;
-    letter-spacing: 0.01em;
+    letter-spacing: 0;
 }
 
 .field-label {
@@ -102,10 +105,36 @@ label {
     margin-bottom: 0;
 }
 
-.summary-label {
+.options-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.options-toggle {
     display: inline-flex;
-    margin-bottom: 0;
+    align-items: center;
+    gap: 8px;
+    border: 0;
+    background: transparent;
+    padding: 2px 0;
+    cursor: pointer;
+    font: inherit;
     font-weight: 600;
+    color: var(--text-color);
+}
+
+.options-chevron {
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 6px solid var(--text-color);
+    transition: transform 0.15s ease;
+}
+
+.options-toggle[aria-expanded="true"] .options-chevron {
+    transform: rotate(90deg);
 }
 
 .tip {
@@ -113,20 +142,28 @@ label {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     padding: 0;
     border: 1px solid #c56a12;
     border-radius: 50%;
     background: #fff6ec;
     color: var(--primary-ink);
-    font: 700 11px/1 Aptos, "Segoe UI Variable Text", "Segoe UI", sans-serif;
     cursor: help;
     flex: 0 0 auto;
 }
 
+.tip::before {
+    content: "";
+    display: block;
+    width: 16px;
+    height: 16px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.15 5.95A1.85 1.85 0 1 1 9.46 7.09C9 7.75 8 8.15 8 9.05' fill='none' stroke='%231a1a1a' stroke-width='1.6' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='11.75' r='0.95' fill='%231a1a1a'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+}
+
 .tip:hover,
-.tip:focus-visible {
+.tip:focus-visible,
+.tip.is-open {
     background: var(--primary-color);
 }
 
@@ -141,22 +178,25 @@ label {
     border-radius: 6px;
     background: var(--primary-ink);
     color: #fff;
-    font: 500 0.78rem/1.35 Aptos, "Segoe UI Variable Text", "Segoe UI", sans-serif;
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 400;
+    line-height: 1.4;
     letter-spacing: 0;
     text-align: left;
     white-space: normal;
-    z-index: 5;
+    z-index: 10;
     box-shadow: 0 6px 16px rgba(26, 26, 26, 0.18);
 }
 
-.form-group-narrow .tip-bubble {
+.form-group-right .tip-bubble {
     left: auto;
     right: 0;
 }
 
 .tip:hover .tip-bubble,
-.tip:focus .tip-bubble,
-.tip:focus-visible .tip-bubble {
+.tip:focus-visible .tip-bubble,
+.tip.is-open .tip-bubble {
     display: block;
 }
 
@@ -192,7 +232,7 @@ select.form-control:hover {
 
 .form-control:focus,
 .btn:focus-visible,
-summary:focus-visible,
+.options-toggle:focus-visible,
 .tip:focus-visible {
     outline: 2px solid #c56a12;
     outline-offset: 2px;
@@ -217,15 +257,13 @@ summary:focus-visible,
 .advanced-options {
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    padding: 12px 14px 4px;
+    padding: 12px 14px;
     margin-bottom: 18px;
     background: #f8fafc;
 }
 
-.advanced-options summary {
-    cursor: pointer;
-    font-weight: 600;
-    margin-bottom: 12px;
+.options-body {
+    margin-top: 12px;
 }
 
 .check-row {
@@ -244,6 +282,7 @@ summary:focus-visible,
 
 .check label {
     margin-bottom: 0;
+    font-size: 0.9rem;
     font-weight: 500;
 }
 
@@ -282,6 +321,7 @@ summary:focus-visible,
 
 .status {
     font-size: 0.95rem;
+    font-variant-numeric: tabular-nums;
     color: var(--text-color);
 }
 
@@ -338,6 +378,22 @@ summary:focus-visible,
 
     .form-group-narrow {
         flex-basis: auto;
+    }
+
+    .field-label,
+    .options-header {
+        position: relative;
+    }
+
+    .tip {
+        position: static;
+    }
+
+    .tip-bubble,
+    .form-group-right .tip-bubble {
+        left: 0;
+        right: auto;
+        max-width: 100%;
     }
 
     .button-container {

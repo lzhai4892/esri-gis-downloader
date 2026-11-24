@@ -13,12 +13,15 @@ const mValuesCheckbox = document.getElementById("m-values-checkbox");
 const zValuesCheckbox = document.getElementById("z-values-checkbox");
 const progressBar = document.getElementById("progress-bar");
 const statusElement = document.getElementById("status");
+const optionsToggle = document.getElementById("options-toggle");
+const advancedBody = document.getElementById("advanced-body");
 const partialActions = document.getElementById("partial-actions");
 const savePartialBtn = document.getElementById("save-partial-btn");
 const discardBtn = document.getElementById("discard-btn");
 const form = document.getElementById("download-form");
 const downloadBtn = document.getElementById("download-btn");
 const stopBtn = document.getElementById("stop-btn");
+const tipButtons = Array.from(document.querySelectorAll(".tip"));
 
 const RECENT_KEY = "esri-downloader-recent";
 const LARGE_COUNT = 100000;
@@ -35,17 +38,41 @@ let generation = 0;
 let stopRequested = false;
 let pendingLargeKey = "";
 let partial = null;
+let lastAutoFileBase = "";
 
 form.addEventListener("submit", startDownload);
 stopBtn.addEventListener("click", stopDownload);
 savePartialBtn.addEventListener("click", savePartial);
 discardBtn.addEventListener("click", discardPartial);
+optionsToggle.addEventListener("click", () => {
+  const expanded = optionsToggle.getAttribute("aria-expanded") === "true";
+  optionsToggle.setAttribute("aria-expanded", String(!expanded));
+  advancedBody.hidden = expanded;
+});
+tipButtons.forEach((button) => {
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const opening = !button.classList.contains("is-open");
+    closeTips();
+    if (opening) button.classList.add("is-open");
+  });
+});
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".tip")) closeTips();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeTips();
+});
 urlInput.addEventListener("input", () => {
   pendingLargeKey = "";
+  hidePartial();
+  clearBar();
   hideLayerPicker();
 });
 layerSelect.addEventListener("change", () => {
   pendingLargeKey = "";
+  hidePartial();
   if (!layerSelect.value) {
     showChoiceNotice("Choose a layer, then click Download layer.");
     return;
@@ -58,6 +85,10 @@ layerSelect.addEventListener("change", () => {
   });
 });
 loadRecentUrls();
+
+function closeTips() {
+  tipButtons.forEach((button) => button.classList.remove("is-open"));
+}
 
 function startDownload(event) {
   event.preventDefault();
@@ -125,6 +156,10 @@ async function runDownload(runId) {
   const shellHolder = { shell: null };
   let format = target.format;
   let fellBackFromGeoJson = false;
+  if (format === "geojson" && !target.supportsGeoJson) {
+    format = "json";
+    fellBackFromGeoJson = true;
+  }
 
   try {
     await collectFeatures(target, format, collected, seen, shellHolder);
@@ -175,7 +210,6 @@ async function runDownload(runId) {
   }
 
   saveFeatures(collected, shellHolder.shell, format, target.fileBase);
-  clearBar();
   setProgress(100);
   const fallbackNote = fellBackFromGeoJson
     ? " This layer could not be saved as GeoJSON, so the file is Esri JSON in the layer’s own coordinates."
@@ -264,7 +298,7 @@ async function resolveTarget(rawUrl) {
       }
       layerUrl = selected.url;
       meta = await getJson(layerUrl, { f: "json", token });
-    } else {
+    } else if (!located.keepPicker) {
       hideLayerPicker();
     }
   }
@@ -287,7 +321,11 @@ async function resolveTarget(rawUrl) {
   }
   const count = await tryCount(layerUrl, where, token);
   const fileBase = outputBase(meta);
-  if (!nameInput.value.trim()) nameInput.value = fileBase;
+  const currentName = nameInput.value.trim();
+  if (!currentName || currentName === lastAutoFileBase) {
+    nameInput.value = fileBase;
+    lastAutoFileBase = fileBase;
+  }
   rememberUrl(url);
 
   const countText =
@@ -301,6 +339,10 @@ async function resolveTarget(rawUrl) {
     layerUrl,
     meta,
     where,
+    token,
+    returnGeometry: geometryCheckbox.checked,
+    returnM: mValuesCheckbox.checked,
+    returnZ: zValuesCheckbox.checked,
     count,
     pageSize,
     oidField: objectIdFieldOf(meta),
@@ -317,6 +359,22 @@ async function resolveTarget(rawUrl) {
     format: formatSelect.value === "geojson" ? "geojson" : "json",
     fileBase: nameInput.value.trim() || fileBase,
   };
+}
+
+function isTransferLimitExceeded(data) {
+  return Boolean(
+    data &&
+    (data.exceededTransferLimit === true ||
+      (data.properties && data.properties.exceededTransferLimit === true)),
+  );
+}
+
+function isTransferLimitExplicitlyFalse(data) {
+  return Boolean(
+    data &&
+    (data.exceededTransferLimit === false ||
+      (data.properties && data.properties.exceededTransferLimit === false)),
+  );
 }
 
 async function collectFeatures(target, format, collected, seen, shellHolder) {
@@ -351,7 +409,7 @@ async function pageByOffset(target, format, collected, seen, shellHolder) {
     if (added === 0) break;
     offset += added;
     reportProgress(collected.length, target.count, target.pageSize);
-    if (added < target.pageSize) break;
+    if (added < target.pageSize && !isTransferLimitExceeded(data)) break;
     if (target.count != null && collected.length >= target.count) break;
   }
 }
@@ -368,11 +426,11 @@ async function pageWithoutPagination(
     returnIdsOnly: "true",
     returnGeometry: "false",
     f: "json",
-    token: tokenValue(),
+    token: target.token,
   });
   const ids = Array.isArray(idData.objectIds) ? idData.objectIds : [];
   const truncated =
-    idData.exceededTransferLimit === true ||
+    isTransferLimitExceeded(idData) ||
     (target.count != null && ids.length < target.count);
   if (!truncated && ids.length === 0) return;
   if (truncated) {
@@ -380,22 +438,43 @@ async function pageWithoutPagination(
     return;
   }
 
-  for (
-    let index = 0;
-    index < ids.length && !stopRequested;
-    index += target.pageSize
-  ) {
-    const chunk = ids.slice(index, index + target.pageSize);
+  const totalExpected = target.count || ids.length;
+  const queue = [];
+  for (let index = 0; index < ids.length; index += target.pageSize) {
+    queue.push(ids.slice(index, index + target.pageSize));
+  }
+  while (queue.length > 0 && !stopRequested) {
+    const chunk = queue.shift();
     const data = await postQuery(target.layerUrl, {
       ...featureParams(target, format),
       objectIds: chunk.join(","),
     });
-    takeBatch(data, collected, seen, target.oidField, shellHolder);
-    reportProgress(
-      collected.length,
-      target.count || ids.length,
-      target.pageSize,
+    const added = takeBatch(
+      data,
+      collected,
+      seen,
+      target.oidField,
+      shellHolder,
     );
+    reportProgress(collected.length, totalExpected, target.pageSize);
+    if (added < chunk.length && isTransferLimitExceeded(data)) {
+      const remaining = chunk.filter((id) => !seen.has(String(id)));
+      if (remaining.length === chunk.length && chunk.length === 1) {
+        throw new Error(
+          "A single feature exceeded the server transfer limit and could not be downloaded.",
+        );
+      }
+      const nextStep = Math.max(
+        1,
+        Math.floor((remaining.length || chunk.length) / 2),
+      );
+      const source = remaining.length > 0 ? remaining : chunk;
+      const split = [];
+      for (let i = 0; i < source.length; i += nextStep) {
+        split.push(source.slice(i, i + nextStep));
+      }
+      queue.unshift(...split);
+    }
   }
 }
 
@@ -415,7 +494,7 @@ async function pageByObjectIdRanges(
     where: target.where,
     returnGeometry: "false",
     f: "json",
-    token: tokenValue(),
+    token: target.token,
     outStatistics: JSON.stringify([
       {
         statisticType: "min",
@@ -452,14 +531,16 @@ async function pageByObjectIdRanges(
     const data = await postQuery(target.layerUrl, {
       ...featureParams(target, format),
       where: `(${target.where}) AND ${target.oidField} >= ${low} AND ${target.oidField} <= ${high}`,
-      orderByFields: `${target.oidField} ASC`,
-      resultRecordCount: String(target.pageSize),
     });
     const batch = Array.isArray(data.features) ? data.features : [];
+    const windowSpan = high - low + 1;
     const capped =
-      data.exceededTransferLimit === true || batch.length >= target.pageSize;
+      isTransferLimitExceeded(data) ||
+      (!isTransferLimitExplicitlyFalse(data) &&
+        batch.length >= target.pageSize &&
+        windowSpan > target.pageSize);
     if (capped && high > low) {
-      const nextWindow = Math.max(1, Math.floor((high - low + 1) / 2));
+      const nextWindow = Math.max(1, Math.floor(windowSpan / 2));
       if (nextWindow === windowSize) stuck += 1;
       else stuck = 0;
       if (stuck > 5) {
@@ -486,14 +567,13 @@ function featureParams(target, format) {
   const params = {
     where: target.where,
     outFields: "*",
-    returnGeometry: geometryCheckbox.checked ? "true" : "false",
-    returnM: mValuesCheckbox.checked ? "true" : "false",
-    returnZ: zValuesCheckbox.checked ? "true" : "false",
+    returnGeometry: target.returnGeometry ? "true" : "false",
+    returnM: target.returnM ? "true" : "false",
+    returnZ: target.returnZ ? "true" : "false",
     f: format === "geojson" ? "geojson" : "json",
   };
   if (format === "geojson") params.outSR = "4326";
-  const token = tokenValue();
-  if (token) params.token = token;
+  if (target.token) params.token = target.token;
   return params;
 }
 
@@ -715,17 +795,24 @@ async function layerUrlsFromMapPage(raw) {
   if (!itemId || !looksLikeMapPage) return null;
 
   const base = sharingBase(parsed);
+  const token = tokenValue();
   const layers = [];
   let lastError = null;
+  function collectWebMapLayers(items) {
+    if (!Array.isArray(items)) return;
+    items.forEach((layer) => {
+      if (!layer) return;
+      addLayerUrl(layers, layer.url, layer.title || layer.name);
+      collectWebMapLayers(layer.layers);
+    });
+  }
   try {
     const data = await getJson(`${base}/content/items/${itemId}/data`, {
       f: "json",
+      token,
     });
-    [...(data.operationalLayers || []), ...(data.tables || [])].forEach(
-      (layer) => {
-        addLayerUrl(layers, layer.url, layer.title || layer.name);
-      },
-    );
+    collectWebMapLayers(data.operationalLayers);
+    collectWebMapLayers(data.tables);
     addLayerUrl(layers, data.url, data.title || data.name);
   } catch (error) {
     lastError = error;
@@ -734,6 +821,7 @@ async function layerUrlsFromMapPage(raw) {
     try {
       const item = await getJson(`${base}/content/items/${itemId}`, {
         f: "json",
+        token,
       });
       addLayerUrl(layers, item.url, item.title || item.name);
     } catch (error) {
@@ -777,7 +865,11 @@ async function locateLayerUrl(raw) {
     );
     return null;
   }
-  return { url: sanitizeServiceUrl(selected.url), rewritten: true };
+  return {
+    url: sanitizeServiceUrl(selected.url),
+    rewritten: false,
+    keepPicker: true,
+  };
 }
 
 function sanitizeServiceUrl(raw) {
@@ -1135,23 +1227,30 @@ function setBusy(busy) {
 function setIndeterminate(on) {
   progressBar.classList.remove("error");
   progressBar.classList.toggle("indeterminate", on);
-  if (on) progressBar.style.width = "";
+  if (on) {
+    progressBar.style.width = "";
+    progressBar.removeAttribute("aria-valuenow");
+  }
 }
 
 function setProgress(pct) {
+  const clamped = Math.max(0, Math.min(100, pct));
   progressBar.classList.remove("indeterminate", "error");
-  progressBar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  progressBar.style.width = `${clamped}%`;
+  progressBar.setAttribute("aria-valuenow", String(Math.round(clamped)));
 }
 
 function clearBar() {
   progressBar.classList.remove("indeterminate", "error");
   progressBar.style.width = "0%";
+  progressBar.setAttribute("aria-valuenow", "0");
 }
 
 function showError(message) {
   clearBar();
   progressBar.classList.add("error");
   progressBar.style.width = "100%";
+  progressBar.removeAttribute("aria-valuenow");
   updateStatus(message, "error");
 }
 
