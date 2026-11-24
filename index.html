@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArcGIS REST Layer Downloader</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="favicon.ico" sizes="32x32">
+</head>
+<body>
+    <div class="container">
+        <header class="title-row">
+            <img src="favicon.svg" alt="" width="36" height="36">
+            <div>
+                <h1>ArcGIS REST Layer Downloader</h1>
+                <p class="lede">Download one feature layer as Esri JSON or GeoJSON.</p>
+            </div>
+        </header>
+
+        <form id="download-form">
+            <div class="form-group">
+                <div class="field-label">
+                    <label for="url-input">Layer or map link</label>
+                    <button type="button" class="tip" aria-label="Help: layer or map link">?<span class="tip-bubble" role="tooltip">Paste a link that ends in /0, /1, or /2 for one layer, or a link that ends in MapServer or FeatureServer to see every layer. A Map Viewer page works too.</span></button>
+                </div>
+                <input type="url" id="url-input" class="form-control" list="recent-urls" spellcheck="false" placeholder="https://host/arcgis/rest/services/Name/MapServer/0" required>
+                <datalist id="recent-urls"></datalist>
+                <p class="hint">A layer link, or a Map Viewer page that opens that layer.</p>
+            </div>
+
+            <div class="form-group" id="layer-group" hidden>
+                <div id="choice-notice" class="choice-notice" hidden></div>
+                <div class="field-label">
+                    <label for="layer-select">Layer</label>
+                    <button type="button" class="tip" aria-label="Help: layer">?<span class="tip-bubble" role="tooltip">Choose the layer to download. A group is only a folder of layers, so pick one inside it.</span></button>
+                </div>
+                <select id="layer-select" class="form-control"></select>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <div class="field-label">
+                        <label for="name-input">Output file name</label>
+                        <button type="button" class="tip" aria-label="Help: output file name">?<span class="tip-bubble" role="tooltip">Leave blank to use the layer name. The file type is added for you.</span></button>
+                    </div>
+                    <input type="text" id="name-input" class="form-control" spellcheck="false" placeholder="Filled from the layer name">
+                </div>
+                <div class="form-group form-group-narrow">
+                    <div class="field-label">
+                        <label for="format-select">Format</label>
+                        <button type="button" class="tip" aria-label="Help: format">?<span class="tip-bubble" role="tooltip">GeoJSON is the usual choice and uses longitude and latitude. Esri JSON keeps the layer’s original coordinates.</span></button>
+                    </div>
+                    <select id="format-select" class="form-control">
+                        <option value="geojson" selected>GeoJSON (longitude / latitude)</option>
+                        <option value="json">Esri JSON</option>
+                    </select>
+                </div>
+            </div>
+
+            <details class="advanced-options">
+                <summary>
+                    <span class="field-label summary-label">
+                        Query options
+                        <button type="button" class="tip" aria-label="Help: query options">?<span class="tip-bubble" role="tooltip">Optional. How many records to request at a time, a filter, and a sign-in code for a private layer.</span></button>
+                    </span>
+                </summary>
+                <div class="form-row">
+                    <div class="form-group form-group-narrow">
+                        <div class="field-label">
+                            <label for="records-input">Records per request</label>
+                            <button type="button" class="tip" aria-label="Help: records per request">?<span class="tip-bubble" role="tooltip">Leave blank to let the layer decide the page size. A larger number is reduced to what the layer allows.</span></button>
+                        </div>
+                        <input type="number" id="records-input" class="form-control" min="1" step="1" placeholder="Layer maximum">
+                    </div>
+                    <div class="form-group">
+                        <div class="field-label">
+                            <label for="where-input">Where clause</label>
+                            <button type="button" class="tip" aria-label="Help: where clause">?<span class="tip-bubble" role="tooltip">Keeps only matching features. 1=1 means all of them.</span></button>
+                        </div>
+                        <input type="text" id="where-input" class="form-control" value="1=1" spellcheck="false">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="field-label">
+                        <label for="token-input">Token</label>
+                        <button type="button" class="tip" aria-label="Help: token">?<span class="tip-bubble" role="tooltip">Leave blank for a public layer. For a private layer, paste the access code.</span></button>
+                    </div>
+                    <input type="password" id="token-input" class="form-control" autocomplete="off" spellcheck="false" placeholder="Only for a private layer">
+                </div>
+                <div class="check-row">
+                    <div class="check">
+                        <input type="checkbox" id="geometry-checkbox" checked>
+                        <label for="geometry-checkbox">Return geometry</label>
+                    </div>
+                    <div class="check">
+                        <input type="checkbox" id="m-values-checkbox" checked>
+                        <label for="m-values-checkbox">Return M values</label>
+                    </div>
+                    <div class="check">
+                        <input type="checkbox" id="z-values-checkbox" checked>
+                        <label for="z-values-checkbox">Return Z values</label>
+                    </div>
+                </div>
+            </details>
+
+            <div class="progress-container">
+                <div class="progress">
+                    <div id="progress-bar" class="progress-bar"></div>
+                </div>
+                <div id="status" class="status" role="status" aria-live="polite">Paste a layer link or a Map Viewer page.</div>
+            </div>
+
+            <div id="partial-actions" class="button-container" hidden>
+                <button type="button" id="save-partial-btn" class="btn btn-primary" title="Save what was downloaded before Stop.">Save downloaded features</button>
+                <button type="button" id="discard-btn" class="btn btn-secondary" title="Throw away what was downloaded.">Discard</button>
+            </div>
+
+            <div class="button-container">
+                <button type="submit" id="download-btn" class="btn btn-primary" title="Download the selected layer.">Download</button>
+                <button type="button" id="stop-btn" class="btn btn-secondary" disabled title="Stop the download. You can still save what was already retrieved.">Stop</button>
+            </div>
+        </form>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
